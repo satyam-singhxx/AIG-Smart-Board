@@ -1,0 +1,4 @@
+gesture,enum
+write,0
+move,1
+erase,2
