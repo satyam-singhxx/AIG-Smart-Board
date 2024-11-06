@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 import joblib
 
 # Load the trained model and scaler
-model = load_model('hand_gesture_model.h5')
+model = load_model('hand_gesture_model.keras')
 scaler = joblib.load('scaler.pkl')
 
 # Define the sequence length based on your model training
