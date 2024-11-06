@@ -1,0 +1,565 @@
+# data collection
+import cv2
+import mediapipe as mp
+import numpy as np
+import os
+import csv
+import time
+
+mp_drawing = mp.solutions.drawing_utils
+mp_hands = mp.solutions.hands
+
+def collect_hand_gesture_data(gestures, num_samples=100, sequence_length=30, delay_between_samples=3):
+    cap = cv2.VideoCapture(0)
+    
+    # Create data directory
+    os.makedirs('data', exist_ok=True)
+    
+    # Prepare CSV files
+    keypoints_file = open('data/hand_keypoints.csv', 'w', newline='')
+    keypoints_writer = csv.writer(keypoints_file)
+    keypoints_writer.writerow(['gesture', 'sample_id'] + [f'{coord}{i}' for i in range(21) for coord in ['x', 'y', 'z']])
+    
+    historical_file = open('data/hand_historical.csv', 'w', newline='')
+    historical_writer = csv.writer(historical_file)
+    historical_header = ['gesture', 'sample_id', 'frame_id'] + [f'{coord}{i}' for i in range(21) for coord in ['x', 'y', 'z']]
+    historical_writer.writerow(historical_header)
+    
+    gesture_enum_file = open('data/gesture_enum.csv', 'w', newline='')
+    gesture_enum_writer = csv.writer(gesture_enum_file)
+    gesture_enum_writer.writerow(['gesture', 'enum'])
+    for i, gesture in enumerate(gestures):
+        gesture_enum_writer.writerow([gesture, i])
+    gesture_enum_file.close()
+    
+    keypoints_enum_file = open('data/hand_keypoints_enum.csv', 'w', newline='')
+    keypoints_enum_writer = csv.writer(keypoints_enum_file)
+    keypoints_enum_writer.writerow(['keypoint', 'enum'])
+    for i in range(21):
+        keypoints_enum_writer.writerow([f'HAND_LANDMARK_{i}', i])
+    keypoints_enum_file.close()
+    
+    with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5) as hands:
+        for gesture in gestures:
+            current_sample = 0
+            
+            while current_sample < num_samples:
+                # Countdown timer
+                for countdown in range(delay_between_samples, 0, -1):
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Failed to capture frame")
+                        break
+
+                    cv2.putText(frame, f"Next sample in: {countdown}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    cv2.putText(frame, f"Gesture: {gesture}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.putText(frame, f"Sample: {current_sample}/{num_samples}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.putText(frame, "Prepare gesture...", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    
+                    cv2.imshow('Hand Gesture Collection', frame)
+                    if cv2.waitKey(1000) & 0xFF == ord('q'):  # Wait for 1 second
+                        break
+
+                sequence_buffer = []
+                frame_count = 0
+
+                # Collect continuous data for the sequence
+                while frame_count < sequence_length:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Failed to capture frame")
+                        break
+
+                    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    results = hands.process(image)
+
+                    if results.multi_hand_landmarks:
+                        hand_landmarks = results.multi_hand_landmarks[0]  # Assuming we're tracking one hand
+                        keypoints = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark]).flatten()
+                        
+                        sequence_buffer.append(keypoints)
+                        frame_count += 1
+
+                        # Draw hand landmarks
+                        mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+                    # Display information on the camera window
+                    cv2.putText(frame, f"Gesture: {gesture}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.putText(frame, f"Sample: {current_sample}/{num_samples}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.putText(frame, f"Collecting frames: {frame_count}/{sequence_length}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    
+                    cv2.imshow('Hand Gesture Collection', frame)
+
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+
+                if len(sequence_buffer) == sequence_length:
+                    # Save current frame keypoints (last frame of the sequence)
+                    keypoints_row = [gesture, current_sample] + sequence_buffer[-1].tolist()
+                    keypoints_writer.writerow(keypoints_row)
+                    
+                    # Save historical sequence
+                    for frame_id, hist_keypoints in enumerate(sequence_buffer):
+                        historical_row = [gesture, current_sample, frame_id] + hist_keypoints.tolist()
+                        historical_writer.writerow(historical_row)
+                    
+                    current_sample += 1
+                
+                if current_sample >= num_samples:
+                    cv2.putText(frame, "Press 'n' for next gesture or 'q' to quit", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.imshow('Hand Gesture Collection', frame)
+                    
+                    key = cv2.waitKey(0) & 0xFF  # Wait for key press
+                    if key == ord('q'):
+                        break
+                    elif key == ord('n'):
+                        continue  # Move to the next gesture
+
+            if key == ord('q'):
+                break
+
+    keypoints_file.close()
+    historical_file.close()
+    cap.release()
+    cv2.destroyAllWindows()
+
+# Example usage
+gestures = ['write', 'move', 'erase']  # Add your hand gestures here
+collect_hand_gesture_data(gestures, num_samples=50, sequence_length=30, delay_between_samples=1)
+print("Data collection completed. Check the 'data' folder for CSV files.")
+
+
+
+
+
+
+# model building
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, classification_report
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.utils import to_categorical
+
+# Set style for better visualizations
+plt.style.use('default')
+
+# Load the data
+def load_data(file_path):
+    data = pd.read_csv(file_path)
+    return data
+
+# Preprocess the data
+def preprocess_data(data, sequence_length):
+    X = []
+    y = []
+    
+    for gesture in data['gesture'].unique():
+        gesture_data = data[data['gesture'] == gesture]
+        for sample_id in gesture_data['sample_id'].unique():
+            sample = gesture_data[gesture_data['sample_id'] == sample_id]
+            sample = sample.sort_values('frame_id')
+            
+            features = sample.iloc[:, 3:].values
+            
+            if len(features) == sequence_length:
+                X.append(features)
+                y.append(gesture)
+    
+    return np.array(X), np.array(y)
+
+# Function to plot training history
+def plot_training_history(history):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+    
+    # Plot accuracy
+    ax1.plot(history.history['accuracy'], label='Training Accuracy')
+    ax1.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    ax1.set_title('Model Accuracy over Epochs')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Accuracy')
+    ax1.legend()
+    ax1.grid(True)
+    
+    # Plot loss
+    ax2.plot(history.history['loss'], label='Training Loss')
+    ax2.plot(history.history['val_loss'], label='Validation Loss')
+    ax2.set_title('Model Loss over Epochs')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Loss')
+    ax2.legend()
+    ax2.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig('training_history.png')
+    plt.close()
+
+# Function to plot confusion matrix
+def plot_confusion_matrix(y_true, y_pred, classes):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=classes, yticklabels=classes)
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.tight_layout()
+    plt.savefig('confusion_matrix.png')
+    plt.close()
+
+# Function to plot per-class metrics
+def plot_class_metrics(report_dict, classes):
+    metrics = ['precision', 'recall', 'f1-score']
+    class_metrics = pd.DataFrame({
+        metric: [report_dict[cls][metric] for cls in classes]
+        for metric in metrics
+    }, index=classes)
+    
+    plt.figure(figsize=(12, 6))
+    class_metrics.plot(kind='bar')
+    plt.title('Per-class Performance Metrics')
+    plt.xlabel('Gesture Class')
+    plt.ylabel('Score')
+    plt.legend(title='Metrics')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig('class_metrics.png')
+    plt.close()
+
+# Main execution
+# Load gesture enumeration
+gesture_enum = pd.read_csv('data/gesture_enum.csv')
+gesture_to_int = dict(zip(gesture_enum['gesture'], gesture_enum['enum']))
+int_to_gesture = dict(zip(gesture_enum['enum'], gesture_enum['gesture']))
+
+# Load and preprocess the data
+data = load_data('data/hand_historical.csv')
+X, y = preprocess_data(data, sequence_length=30)
+
+# Convert gestures to integers
+y = np.array([gesture_to_int[gesture] for gesture in y])
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Normalize the data
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
+X_test = scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
+
+# Store original test labels for later use
+y_test_original = y_test.copy()
+
+# Convert labels to categorical
+num_classes = len(gesture_to_int)
+y_train = to_categorical(y_train, num_classes)
+y_test = to_categorical(y_test, num_classes)
+
+# Build the model
+model = Sequential([
+    LSTM(64, input_shape=(X_train.shape[1], X_train.shape[2]), return_sequences=True),
+    Dropout(0.2),
+    LSTM(32),
+    Dropout(0.2),
+    Dense(num_classes, activation='softmax')
+])
+
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Print model summary
+print("Model Architecture:")
+model.summary()
+
+# Train the model
+history = model.fit(X_train, y_train, epochs=500, batch_size=32, 
+                   validation_split=0.2, verbose=1)
+
+# Evaluate the model
+test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+print(f"\nTest accuracy: {test_accuracy:.4f}")
+print(f"Test loss: {test_loss:.4f}")
+
+# Generate predictions
+y_pred = model.predict(X_test)
+y_pred_classes = np.argmax(y_pred, axis=1)
+y_test_classes = y_test_original
+
+# Plot training history
+plot_training_history(history)
+
+# Plot confusion matrix
+plot_confusion_matrix(y_test_classes, y_pred_classes, 
+                     [int_to_gesture[i] for i in range(num_classes)])
+
+# Generate and plot classification report
+report = classification_report(y_test_classes, y_pred_classes, 
+                             target_names=[int_to_gesture[i] for i in range(num_classes)],
+                             output_dict=True)
+plot_class_metrics(report, [int_to_gesture[i] for i in range(num_classes)])
+
+# Print detailed classification report
+print("\nClassification Report:")
+print(classification_report(y_test_classes, y_pred_classes, 
+                          target_names=[int_to_gesture[i] for i in range(num_classes)]))
+
+# Save training history to CSV
+history_df = pd.DataFrame(history.history)
+history_df.to_csv('training_history.csv', index=False)
+
+# Save the model and scaler
+model.save('hand_gesture_model.h5')
+joblib.dump(scaler, 'scaler.pkl')
+
+print("\nAll visualizations, model, and training history have been saved successfully.")
+print("\nFiles generated:")
+print("1. training_history.png - Training and validation accuracy/loss curves")
+print("2. confusion_matrix.png - Confusion matrix heatmap")
+print("3. class_metrics.png - Per-class performance metrics")
+print("4. training_history.csv - Detailed training history")
+print("5. hand_gesture_model.h5 - Trained model")
+print("6. scaler.pkl - Fitted StandardScaler")
+
+
+
+
+# APP
+import cv2
+import pandas as pd
+import mediapipe as mp
+import numpy as np
+from tensorflow.keras.models import load_model
+from sklearn.preprocessing import StandardScaler
+import joblib
+from collections import deque
+import time
+
+# Load the trained model and scaler
+model = load_model('hand_gesture_model.h5')
+scaler = joblib.load('scaler.pkl')
+
+# Reduced sequence length for faster prediction
+sequence_length = 10  # Reduced from 30
+input_shape = (sequence_length, 63)
+
+# Initialize sequence buffer
+sequence_buffer = deque(maxlen=sequence_length)
+
+# Define gesture mapping
+gesture_enum = pd.read_csv('data/gesture_enum.csv')
+int_to_gesture = dict(zip(gesture_enum['enum'], gesture_enum['gesture']))
+
+# Add gesture smoothing
+class GestureSmoothing:
+    def __init__(self, buffer_size=5):
+        self.gesture_buffer = deque(maxlen=buffer_size)
+        self.current_gesture = None
+        
+    def update(self, new_gesture):
+        self.gesture_buffer.append(new_gesture)
+        if len(self.gesture_buffer) == self.gesture_buffer.maxlen:
+            most_common = max(set(self.gesture_buffer), key=self.gesture_buffer.count)
+            if self.gesture_buffer.count(most_common) >= 3:
+                if most_common != self.current_gesture:
+                    self.current_gesture = most_common
+                    return True, most_common
+        return False, self.current_gesture
+
+def preprocess_frame(frame):
+    return scaler.transform(frame.reshape(1, -1)).flatten()
+
+def predict_gesture(sequence):
+    if len(sequence) < sequence_length:
+        return None
+    sequence = np.array(list(sequence))
+    sequence = sequence.reshape(1, sequence_length, -1)
+    prediction = model.predict(sequence, verbose=0)
+    return int_to_gesture[np.argmax(prediction)]
+
+# Function to create blank canvas
+def create_canvas(height, width, color='black'):
+    if color == 'white':
+        return np.full((height, width, 3), 255, np.uint8)
+    return np.zeros((height, width, 3), np.uint8)
+
+# Function to draw slider
+def draw_slider(frame, x, y, width, value, min_val, max_val, label):
+    cv2.rectangle(frame, (x, y), (x + width, y + 10), (150, 150, 150), -1)
+    pos = int(x + (value - min_val) * width / (max_val - min_val))
+    cv2.rectangle(frame, (pos - 5, y - 5), (pos + 5, y + 15), (200, 200, 200), -1)
+    cv2.rectangle(frame, (pos - 5, y - 5), (pos + 5, y + 15), (100, 100, 100), 1)
+    cv2.putText(frame, f"{label}: {value:.1f}", (x, y - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+    return pos
+
+# Setting up MediaPipe with optimized settings
+mp_drawing = mp.solutions.drawing_utils
+mp_hands = mp.solutions.hands
+drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
+
+# Color options (Green, Blue, Red, White)
+colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 255)]
+current_color = 0
+
+# Initialize parameters
+drawing_thickness = 2
+canvas_opacity = 0.5
+adjusting_thickness = False
+adjusting_opacity = False
+gesture_smoother = GestureSmoothing()
+
+# Performance optimization settings
+PREDICTION_INTERVAL = 0.1  # Seconds between predictions
+last_prediction_time = 0
+
+with mp_hands.Hands(
+    static_image_mode=False,
+    max_num_hands=1,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
+    model_complexity=0) as hands:
+
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    height, width = frame.shape[:2]
+    
+    canvas = create_canvas(height, width, 'black')
+    canvas_color = 'black'
+
+    writing = False
+    erasing = False
+    prev_index_tip = None
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame = cv2.flip(frame, 1)
+        
+        # Process frame
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image.flags.writeable = False
+        results = hands.process(image)
+        image.flags.writeable = True
+
+        # Draw sliders
+        thickness_pos = draw_slider(frame, 100, height - 100, 200, drawing_thickness, 1, 20, "Thickness")
+        opacity_pos = draw_slider(frame, 100, height - 60, 200, canvas_opacity, 0, 1, "Opacity")
+
+        current_time = time.time()
+        
+        if results.multi_hand_landmarks:
+            hand_landmarks = results.multi_hand_landmarks[0]
+            
+            # Optimize landmark drawing
+            mp_drawing.draw_landmarks(
+                frame, hand_landmarks, mp_hands.HAND_CONNECTIONS,
+                landmark_drawing_spec=drawing_spec,
+                connection_drawing_spec=drawing_spec)
+
+            keypoints = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark]).flatten()
+            index_tip = (int(hand_landmarks.landmark[8].x * width), 
+                        int(hand_landmarks.landmark[8].y * height))
+
+            # Handle slider adjustments
+            if index_tip[1] > height - 120 and index_tip[1] < height - 80:
+                if 100 <= index_tip[0] <= 300:
+                    drawing_thickness = int(1 + (index_tip[0] - 100) * 19 / 200)
+                    adjusting_thickness = True
+                    writing = False
+            elif index_tip[1] > height - 80 and index_tip[1] < height - 40:
+                if 100 <= index_tip[0] <= 300:
+                    canvas_opacity = (index_tip[0] - 100) / 200
+                    adjusting_opacity = True
+                    writing = False
+            else:
+                adjusting_thickness = False
+                adjusting_opacity = False
+
+                # Update sequence and predict at intervals
+                processed_landmarks = preprocess_frame(keypoints)
+                sequence_buffer.append(processed_landmarks)
+                
+                if current_time - last_prediction_time >= PREDICTION_INTERVAL:
+                    gesture = predict_gesture(sequence_buffer)
+                    if gesture:
+                        changed, current_gesture = gesture_smoother.update(gesture)
+                        if changed:
+                            if current_gesture == 'write':
+                                writing = True
+                                erasing = False
+                            elif current_gesture == 'erase':
+                                writing = False
+                                erasing = True
+                            elif current_gesture == 'move':
+                                writing = False
+                                erasing = False
+                    last_prediction_time = current_time
+
+                # Color selection logic
+                if writing and index_tip[1] < 50:
+                    color_width = 30
+                    color_spacing = 40
+                    for i in range(len(colors)):
+                        color_x_start = 10 + i * color_spacing
+                        color_x_end = color_x_start + color_width
+                        if color_x_start <= index_tip[0] <= color_x_end:
+                            current_color = i
+                            break
+
+                # Handle drawing and erasing
+                if writing and prev_index_tip is not None:
+                    cv2.line(canvas, prev_index_tip, index_tip, colors[current_color], drawing_thickness)
+                elif erasing:
+                    x_coordinates = [int(lm.x * width) for lm in hand_landmarks.landmark]
+                    y_coordinates = [int(lm.y * height) for lm in hand_landmarks.landmark]
+                    x1, y1 = min(x_coordinates), min(y_coordinates)
+                    x2, y2 = max(x_coordinates), max(y_coordinates)
+                    erase_color = (255, 255, 255) if canvas_color == 'white' else (0, 0, 0)
+                    cv2.rectangle(canvas, (x1, y1), (x2, y2), erase_color, -1)
+
+            prev_index_tip = index_tip
+
+        # Draw color selection UI
+        for i, color in enumerate(colors):
+            cv2.rectangle(frame, (10 + i*40, 10), (40 + i*40, 40), color, -1)
+            if i == current_color:
+                cv2.rectangle(frame, (8 + i*40, 8), (42 + i*40, 42), (255, 255, 255), 2)
+
+        # Add UI instructions
+        cv2.putText(frame, "Press 'w': White canvas", (10, height-160), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(frame, "Press 'b': Black canvas", (10, height-140),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(frame, "Press 'c': Clear canvas", (10, height-120),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+
+        # Handle keyboard input
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('w'):
+            canvas = create_canvas(height, width, 'white')
+            canvas_color = 'white'
+        elif key == ord('b'):
+            canvas = create_canvas(height, width, 'black')
+            canvas_color = 'black'
+        elif key == ord('c'):
+            canvas = create_canvas(height, width, canvas_color)
+        elif key == ord('q'):
+            break
+
+        # Create final image
+        combined_image = cv2.addWeighted(frame, 1, canvas, canvas_opacity, 0)
+        
+        # Display current gesture
+        if gesture_smoother.current_gesture:
+            cv2.putText(combined_image, f"Gesture: {gesture_smoother.current_gesture}", 
+                       (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+        cv2.imshow('Air Writing with Gesture Recognition', combined_image)
+
+    cap.release()
+    cv2.destroyAllWindows()
