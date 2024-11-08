@@ -202,12 +202,12 @@ with mp_hands.Hands(
                 cv2.rectangle(frame, (8 + i*40, 8), (42 + i*40, 42), (255, 255, 255), 2)
 
         # Add UI instructions
-        cv2.putText(frame, "Press 'w': White canvas", (10, height-160), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        cv2.putText(frame, "Press 'b': Black canvas", (10, height-140),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        cv2.putText(frame, "Press 'c': Clear canvas", (10, height-120),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(frame, "Press 'w': White canvas", (10, height-165), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 1)
+        cv2.putText(frame, "Press 'b': Black canvas", (10, height-145),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 1)
+        cv2.putText(frame, "Press 'c': Clear canvas", (10, height-125),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 1)
 
         # Handle keyboard input
         key = cv2.waitKey(1) & 0xFF
