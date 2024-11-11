@@ -8,7 +8,7 @@
 > Transform your webcam into an interactive air writing canvas using hand gesture recognition! Write, erase, and create digital art with just your hand movements. 🖐️✍️
 
 <p align="center">
-  <img src="/api/placeholder/800/400" alt="Air Writing Demo">
+  <img src="data/images/Demo.png">
 </p>
 
 ## 🌟 Features
