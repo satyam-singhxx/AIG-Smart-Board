@@ -53,12 +53,12 @@ cd AGI-smart-board
 
 2. **Train the model** (optional - pre-trained model included)
 ```bash
-python model_building.py
+python model_2.py
 ```
 
 3. **Run the application**
 ```bash
-python app.py
+python app_v2_h5.py
 ```
 
 ## 💡 Usage
